@@ -42,7 +42,10 @@ fn execute(statement: &Statement, environ: &Environment) -> Result<LoxValue, Str
             environ.var(&name.lexeme, value);
         }
         Statement::BlockSt { body: statements } => {
-            execute_statements_newenv(statements, environ)?;
+            let block_env = Environment::new_child(environ);
+            for stmt in statements.into_iter() {
+                execute(stmt, &block_env)?;
+            }
         }
         Statement::IfSt {
             condition,
@@ -54,10 +57,14 @@ fn execute(statement: &Statement, environ: &Environment) -> Result<LoxValue, Str
                 VBoolean(cv) => {
                     if cv {
                         // execute then stmts
-                        execute_statements_newenv(then_branch, environ)?;
+                        for stmt in then_branch.into_iter() {
+                            execute(stmt, &environ)?;
+                        }
                     } else if let Some(else_stmts) = else_branch {
                         // execute else stmts
-                        execute_statements_newenv(else_stmts, environ)?;
+                        for stmt in else_stmts.into_iter() {
+                            execute(stmt, &environ)?;
+                        }
                     }
                 }
                 _ => {
@@ -70,10 +77,9 @@ fn execute(statement: &Statement, environ: &Environment) -> Result<LoxValue, Str
             match condition_val {
                 // enter the loop only if condition_val is true
                 VBoolean(true) => {
-                    let loop_env = Environment::new_child(environ);
                     loop {
                         for stmt in body.into_iter() {
-                            execute(stmt, &loop_env)?;
+                            execute(stmt, &environ)?;
                         }
 
                         // reevaluate condition
@@ -111,14 +117,6 @@ fn execute(statement: &Statement, environ: &Environment) -> Result<LoxValue, Str
     }
 
     Ok(VNil)
-}
-
-fn execute_statements_newenv(statements: &Statements, environ: &Environment) -> Result<(), String> {
-    let block_env = Environment::new_child(environ);
-    for stmt in statements.into_iter() {
-        execute(stmt, &block_env)?;
-    }
-    Ok(())
 }
 
 fn stringify(x: &LoxValue) -> String {
