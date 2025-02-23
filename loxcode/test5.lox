@@ -1,0 +1,15 @@
+// How loud?
+var volume = 11;
+print volume;
+
+// Silence.
+volume = 0;
+print volume;
+
+// Calculate size of 3x4x5 cuboid.
+{
+  var volume = 3 * (4 * 5);
+  print volume;
+}
+
+print volume;

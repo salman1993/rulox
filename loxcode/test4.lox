@@ -1,0 +1,10 @@
+var x = 5;
+var y = 2;
+var z = x / y;
+
+print 2;
+var a = "hello world";
+
+// This is a comment
+print 1 != 2;
+print z;

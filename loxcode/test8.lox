@@ -1,0 +1,19 @@
+var glb = 5;
+
+fun printSum(a, b) {
+  print a + b;
+}
+
+fun getValue(a) {
+  var glb = 80;
+  var sum = glbSum(a);
+
+  return sum;
+}
+
+fun glbSum(a) {
+  return (a + glb);
+}
+
+printSum(2, 4);
+print getValue(5);
