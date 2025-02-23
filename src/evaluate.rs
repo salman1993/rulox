@@ -1,4 +1,5 @@
 use std::iter::zip;
+use std::rc::Rc;
 
 use crate::ast::{Expr, Name, Op, Statement, Statements, AST};
 use crate::environment::Environment;
@@ -12,7 +13,9 @@ pub enum LoxValue {
     VNil,
     // Functions are objects with the same status of numbers, strings, etc.
     // This is created by the 'fun' declaration
-    VFunction(Name, Vec<Name>, Statements),
+    // We need Rc<Environment> for nested functions / closures to capture
+    // the environment in which the function was defined
+    VFunction(Name, Vec<Name>, Statements, Rc<Environment>),
 }
 use LoxValue::*;
 
@@ -24,7 +27,7 @@ pub fn interpret(ast: &AST) -> Result<LoxValue, String> {
     Ok(VNil)
 }
 
-fn execute(statement: &Statement, environ: &Environment) -> Result<LoxValue, String> {
+fn execute(statement: &Statement, environ: &Rc<Environment>) -> Result<LoxValue, String> {
     match statement {
         Statement::PrintSt { expr } => {
             let value = evaluate_expression(expr, environ)?;
@@ -105,9 +108,10 @@ fn execute(statement: &Statement, environ: &Environment) -> Result<LoxValue, Str
             //
             // Defining a function does *NOT* actually run the function. That's
             // done by a function call expression (see below).
+            let defn_environ = environ.clone(); // capture the current environment
             environ.var(
                 &name.lexeme,
-                VFunction(name.clone(), params.clone(), body.clone()),
+                VFunction(name.clone(), params.clone(), body.clone(), defn_environ),
             );
         }
         Statement::ReturnSt { expr } => {
@@ -125,11 +129,11 @@ fn stringify(x: &LoxValue) -> String {
         VNumber(v) => v.to_string(),
         VBoolean(v) => v.to_string(),
         VString(v) => v.clone(),
-        VFunction(name, _, _) => format!("<Function {}>", name.lexeme),
+        VFunction(name, _, _, _) => format!("<Function {}>", name.lexeme),
     }
 }
 
-fn evaluate_expression(expr: &Expr, environ: &Environment) -> Result<LoxValue, String> {
+fn evaluate_expression(expr: &Expr, environ: &Rc<Environment>) -> Result<LoxValue, String> {
     let value = match expr {
         // AST                  =>      Runtime
         Expr::TNumber(value) => VNumber(*value),
@@ -174,12 +178,12 @@ fn evaluate_call_expr(
     callee: &Expr,
     arguments: &Vec<Expr>,
     paren: &Token, // right parentheses token, useful for throwing error msgs
-    environ: &Environment,
+    environ: &Rc<Environment>,
 ) -> Result<LoxValue, String> {
     let callee_value = evaluate_expression(callee, environ)?;
 
     // Early return if callee_value is not a function
-    let VFunction(_name, params, body) = callee_value else {
+    let VFunction(_name, params, body, _) = callee_value else {
         return Err(format!(
             "Error: {callee:?} is not a function - check line {}",
             paren.line
@@ -202,8 +206,8 @@ fn evaluate_call_expr(
 
     // Create the function environment - "stack frame"
     // Then create the variable bindings of params -> argument values
-    let global_env = environ.get_global_env();
-    let function_env = Environment::new_child(global_env);
+    // let global_env = environ.get_global_env();
+    let function_env = Environment::new_child(&environ);
     for (param, argval) in zip(params, evaluated_args) {
         function_env.var(&param.lexeme, argval);
     }
@@ -225,7 +229,7 @@ fn is_truthy(x: &LoxValue) -> bool {
     }
 }
 
-fn evaluate_unary_op(op: &Op, expr: &Expr, environ: &Environment) -> Result<LoxValue, String> {
+fn evaluate_unary_op(op: &Op, expr: &Expr, environ: &Rc<Environment>) -> Result<LoxValue, String> {
     let value = evaluate_expression(expr, environ)?;
     let result_value = match (&op.toktype, &value) {
         (TokenType::Minus, VNumber(v)) => VNumber(-v),
@@ -253,7 +257,7 @@ fn evaluate_binary_op(
     op: &Op,
     left_expr: &Expr,
     right_expr: &Expr,
-    environ: &Environment,
+    environ: &Rc<Environment>,
 ) -> Result<LoxValue, String> {
     let left_val = evaluate_expression(left_expr, environ)?;
     let right_val = evaluate_expression(right_expr, environ)?;
@@ -302,7 +306,7 @@ fn evaluate_logical_op(
     op: &Op,
     left_expr: &Expr,
     right_expr: &Expr,
-    environ: &Environment,
+    environ: &Rc<Environment>,
 ) -> Result<LoxValue, String> {
     let left_val = evaluate_expression(left_expr, environ)?;
     let result_value = match (&left_val, &op.toktype) {

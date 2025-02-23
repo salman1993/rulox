@@ -1,43 +1,32 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::evaluate::LoxValue;
 
-#[derive(Debug)]
-pub struct Environment<'a> {
+#[derive(Debug, PartialEq, Clone)]
+pub struct Environment {
     // Rust allows only 1 mutable reference but each child env needs to be be mutate the parent env (for assign)
     // we need RefCell here for interior mutability - allows us to move borrow checking to runtime
     bindings: RefCell<HashMap<String, LoxValue>>,
-    // The parent reference must live at least as long as 'a (child environment), preventing dangling references.
-    parent: Option<&'a Environment<'a>>,
+    // The child environment borrows the parent environment. It doesn't make sense for the child to own the parent
+    // If the parent is dropped, the child’s parent reference would become invalid
+    parent: Option<Rc<Environment>>,
 }
 
-impl<'a> Environment<'a> {
-    pub fn new() -> Self {
-        Environment {
+impl Environment {
+    pub fn new() -> Rc<Environment> {
+        Rc::new(Environment {
             bindings: RefCell::new(HashMap::new()),
             parent: None,
-        }
+        })
     }
 
-    pub fn new_child(parent: &'a Environment<'a>) -> Self {
+    pub fn new_child(parent: &Rc<Environment>) -> Rc<Environment> {
         // The child borrows the parent, i.e. the child cannot outlive the parent
         // If the parent is dropped, the child’s parent reference would become invalid
-        Environment {
+        Rc::new(Environment {
             bindings: RefCell::new(HashMap::new()),
-            parent: Some(parent),
-        }
-    }
-
-    pub fn get_global_env(&self) -> &Environment<'a> {
-        let mut current = self;
-        while let Some(parent) = current.parent {
-            current = parent;
-        }
-        current
-    }
-
-    pub fn get_parent(&self) -> Option<&'a Environment<'a>> {
-        self.parent
+            parent: Some(parent.clone()),
+        })
     }
 
     pub fn var(&self, name: &str, value: LoxValue) {
@@ -50,7 +39,7 @@ impl<'a> Environment<'a> {
         if bindings.get(name).is_some() {
             bindings.insert(name.to_string(), value);
             return Ok(());
-        } else if let Some(parent) = self.get_parent() {
+        } else if let Some(parent) = &self.parent {
             return parent.assign(name, value);
         }
 
@@ -63,7 +52,7 @@ impl<'a> Environment<'a> {
         let bindings = self.bindings.borrow();
         if let Some(val) = bindings.get(name) {
             return Ok(val.clone()); // TODO: is it bad to clone the value here??
-        } else if let Some(parent) = self.get_parent() {
+        } else if let Some(parent) = &self.parent {
             let value = parent.lookup(name);
             return value;
         }
